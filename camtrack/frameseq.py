@@ -34,10 +34,8 @@ def read_grayscale_f32(path_to_sequence: str) -> pims.FramesSequence:
 def _cli(frame_sequence):
     sequence = read_grayscale_f32(frame_sequence)
     click.echo("Press 'q' to stop")
-    for image in sequence:
-        cv2.imshow('Video', image)
-        if cv2.waitKey(40) & 0xFF == ord('q'):
-            break
+    for i, image in enumerate(sequence):
+        cv2.imwrite('{}.png'.format(i), (image * 255).astype(np.uint8))
 
 
 if __name__ == '__main__':

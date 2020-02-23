@@ -242,23 +242,8 @@ def create_cli(build):
         if file_to_dump is not None:
             dump(corner_storage, file_to_dump)
         if show:
-            click.echo(
-                "Press 'q' to stop, 'd' to go forward, 'a' to go backward, "
-                "'r' to reset"
-            )
-            frame = 0
-            while True:
-                grayscale = sequence[frame]
-                bgr = draw(grayscale, corner_storage[frame])
-                cv2.imshow('Frame', bgr)
-                key = chr(cv2.waitKey(20) & 0xFF)
-                if key == 'a' and frame > 0:
-                    frame -= 1
-                if key == 'd' and frame + 1 < len(corner_storage):
-                    frame += 1
-                if key == 'q':
-                    break
-                if key == 'r':
-                    frame = 0
+            for i, image in enumerate(sequence):
+                im = draw(image, corner_storage[i])
+                cv2.imwrite('{}.png'.format(i), (im * 255).astype(np.uint8))
 
     return cli
