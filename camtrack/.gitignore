@@ -1,0 +1,7 @@
+/.idea
+point_cloud.yml
+rgb.mov
+track.yml
+fox.mov
+__pycache__/
+.DS_Store
