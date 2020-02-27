@@ -5,3 +5,4 @@ track.yml
 fox.mov
 __pycache__/
 .DS_Store
+*.png

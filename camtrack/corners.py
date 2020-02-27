@@ -37,9 +37,9 @@ class _CornerStorageBuilder:
 
 def calc_frame_corners(image: np.array, block_size: int):
     corners = cv2.goodFeaturesToTrack(image,
-                                      maxCorners=1000,
+                                      maxCorners=10000,
                                       qualityLevel=0.05,
-                                      minDistance=block_size * 6,
+                                      minDistance=block_size * 5,
                                       blockSize=block_size,
                                       useHarrisDetector=False)
     return to_frame_corners(corners, block_size)
