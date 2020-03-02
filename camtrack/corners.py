@@ -37,9 +37,9 @@ class _CornerStorageBuilder:
 
 def calc_frame_corners(image: np.array, block_size: int):
     corners = cv2.goodFeaturesToTrack(image,
-                                      maxCorners=10000,
-                                      qualityLevel=0.05,
-                                      minDistance=block_size * 5,
+                                      maxCorners=1000,
+                                      qualityLevel=0.001,
+                                      minDistance=block_size * 2,
                                       blockSize=block_size,
                                       useHarrisDetector=False)
     return to_frame_corners(corners, block_size)
@@ -55,8 +55,8 @@ def to_frame_corners(corners: np.array, block_size, ids=None):
     )
 
 def calc_lk(image_0, image_1, prev_corners, block_size):
-    win_size = (block_size * 2, block_size * 2)
-    max_level = 2
+    win_size = (block_size, block_size)
+    max_level = 1
     new_corners, st, err = cv2.calcOpticalFlowPyrLK(
         image_0,
         image_1,
@@ -72,7 +72,7 @@ def calc_lk(image_0, image_1, prev_corners, block_size):
 def _build_impl(frame_sequence: pims.FramesSequence,
                 builder: _CornerStorageBuilder) -> None:
     image_0 = (255 * frame_sequence[0]).astype(np.uint8)
-    block_size = int(max(image_0.shape[0] * image_0.shape[1] / 120_000, 5))
+    block_size = 10
     corners = calc_frame_corners(image_0, block_size)
     last_id = len(corners.points)
     builder.set_corners_at_frame(0, corners)

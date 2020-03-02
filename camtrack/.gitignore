@@ -6,3 +6,6 @@ fox.mov
 __pycache__/
 .DS_Store
 *.png
+bike_translation_slow/
+fox_full/
+fox_short/
