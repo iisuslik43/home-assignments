@@ -37,7 +37,8 @@ def get_ransac(point_cloud_builder, corners_i, intrinsic_mat):
         res_code, rvec, tvec, inliers = cv2.solvePnPRansac(point_cloud_builder.points[indexes_cloud],
                                                            corners_i.points[indexes_corners],
                                                            intrinsic_mat,
-                                                           distCoeffs=None)
+                                                           distCoeffs=None,
+                                                           reprojectionError=4)
     except Exception:
         print('exception')
         return False, None, None, None
@@ -62,67 +63,74 @@ def track_and_calc_colors(camera_parameters: CameraParameters,
         camera_parameters,
         rgb_sequence[0].shape[0]
     )
-    print('Known frames are', known_view_1[0], 'and', known_view_2[0])
+    i_1 = known_view_1[0]
+    i_2 = known_view_2[0]
+    print('Known frames are', i_1, 'and', i_2)
     view_mat3x4_1 = pose_to_view_mat3x4(known_view_1[1])
     view_mat3x4_2 = pose_to_view_mat3x4(known_view_2[1])
-    correspondences = build_correspondences(corner_storage[known_view_1[0]], corner_storage[known_view_2[0]])
+    correspondences = build_correspondences(corner_storage[i_1], corner_storage[i_2])
 
     triangulation_parameters = TriangulationParameters(60, 1e-1, 1e-2)
-    delta = (known_view_2[0] - known_view_1[0])
+    delta = i_2 - i_1
     min_size = 20
 
-    points3d, corr_ids, _ = triangulate_correspondences(correspondences,
+    points3d, corr_ids, median_cos = triangulate_correspondences(correspondences,
                                                         view_mat3x4_1, view_mat3x4_2,
                                                         intrinsic_mat,
                                                         triangulation_parameters)
-
     view_mats, point_cloud_builder = [view_mat3x4_1 for _ in corner_storage], PointCloudBuilder(corr_ids.astype(np.int64),
                                                                                        points3d)
     err_indexes = set(range(len(corner_storage)))
-    err_indexes.remove(known_view_1[0])
-    err_indexes.remove(known_view_2[0])
-    res_code, rodrig, inliers_1, cloud_points = get_ransac(point_cloud_builder, corner_storage[known_view_1[0]],
+    err_indexes.remove(i_1)
+    err_indexes.remove(i_2)
+    res_code, rodrig, inliers_1, cloud_points = get_ransac(point_cloud_builder, corner_storage[i_1],
                                                            intrinsic_mat)
-    view_mats[known_view_1[0]] = rodrig
-    res_code, rodrig, inliers_2, cloud_points = get_ransac(point_cloud_builder, corner_storage[known_view_2[0]],
+    view_mats[i_1] = rodrig
+    res_code, rodrig, inliers_2, cloud_points = get_ransac(point_cloud_builder, corner_storage[i_2],
                                                            intrinsic_mat)
-    view_mats[known_view_2[0]] = rodrig
-    inliers_min_size = min(len(inliers_1), len(inliers_2)) - 100
+    view_mats[i_2] = rodrig
+    print(median_cos)
+    inliers_min_size = min(len(inliers_1), len(inliers_2)) - 20
     prev_len = [0 for _ in view_mats]
-    for ep in range(10):
-        delta += ep * 4
+    max_ep = 20
+    for ep in range(max_ep):
+        delta += ep * 0
+        inliers_min_size -= 10
         descr_template = 'Point cloud calc epoch # ' + str(ep) + ' - {} inliers, {} points found, cloud size is {}'
         tqdm_iterator = tqdm(corner_storage
                              if ep % 2 == 0
-                             else reversed(corner_storage), total=len(rgb_sequence),
+                             else reversed(corner_storage), total=len(corner_storage),
                              desc=descr_template.format('?', '?', '?'))
         for i, corners_i in enumerate(tqdm_iterator):
-            if ep % 2 == 0:
+            if len(err_indexes) == 0:
+                break
+            if ep % 2 == 1:
                 i = len(corner_storage) - 1 - i
-            res_code, rodrig, inliers, cloud_points = get_ransac(point_cloud_builder, corners_i, intrinsic_mat)
-            if res_code and len(inliers) > inliers_min_size and i in err_indexes:
-                prev_len[i] = len(inliers)
-                inliers = np.array(inliers).astype(np.int64)
-                point_cloud_builder.update_points(inliers, cloud_points)
-                view_mats[i] = rodrig
-                if i in err_indexes:
-                    err_indexes.remove(i)
-            else:
-                inliers = np.array([])
-            if i not in err_indexes:
-                for j in range(max(0, i - delta), min(i + delta, len(view_mats) - 1)):
-                    if i != j and j not in err_indexes:
-                        correspondences_i = build_correspondences(corner_storage[i], corner_storage[j])
-                        points3d_j, corr_ids_j, median_cos = triangulate_correspondences(correspondences_i,
-                                                                                         view_mats[i],
-                                                                                         view_mats[j],
-                                                                                         intrinsic_mat,
-                                                                                         triangulation_parameters)
-                        if len(points3d_j) > min_size:
-                            point_cloud_builder.add_points(corr_ids_j.astype(np.int64), points3d_j)
-                            tqdm_iterator.set_description(descr_template.format(len(inliers),
-                                                                                len(points3d_j),
-                                                                                len(point_cloud_builder._points)))
+            if i in err_indexes:
+                res_code, rodrig, inliers, cloud_points = get_ransac(point_cloud_builder, corners_i, intrinsic_mat)
+                if res_code and (len(inliers) > inliers_min_size or ep == max_ep):
+                    prev_len[i] = len(inliers)
+                    inliers = np.array(inliers).astype(np.int64)
+                    point_cloud_builder.update_points(inliers, cloud_points)
+                    view_mats[i] = rodrig
+                    if i in err_indexes:
+                        err_indexes.remove(i)
+                else:
+                    inliers = np.array([])
+                if i not in err_indexes:
+                    for j in range(max(0, i - delta), min(i + delta, len(view_mats) - 1)):
+                        if i != j and j not in err_indexes:
+                            correspondences_i = build_correspondences(corner_storage[i], corner_storage[j])
+                            points3d_j, corr_ids_j, median_cos = triangulate_correspondences(correspondences_i,
+                                                                                             view_mats[i],
+                                                                                             view_mats[j],
+                                                                                             intrinsic_mat,
+                                                                                             triangulation_parameters)
+                            if len(points3d_j) > min_size:
+                                point_cloud_builder.add_points(corr_ids_j.astype(np.int64), points3d_j)
+                                tqdm_iterator.set_description(descr_template.format(len(inliers),
+                                                                                    len(points3d_j),
+                                                                                    len(point_cloud_builder._points)))
     print('Not handled', len(err_indexes), 'frames')
     calc_point_cloud_colors(
         point_cloud_builder,
