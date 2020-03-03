@@ -33,15 +33,11 @@ def get_ransac(point_cloud_builder, corners_i, intrinsic_mat):
                                                                    indices=True)
     if len(intersection) < 6:
         return False, None, None, None
-    try:
-        res_code, rvec, tvec, inliers = cv2.solvePnPRansac(point_cloud_builder.points[indexes_cloud],
-                                                           corners_i.points[indexes_corners],
-                                                           intrinsic_mat,
-                                                           distCoeffs=None,
-                                                           reprojectionError=4)
-    except Exception:
-        print('exception')
-        return False, None, None, None
+    res_code, rvec, tvec, inliers = cv2.solvePnPRansac(point_cloud_builder.points[indexes_cloud],
+                                                       corners_i.points[indexes_corners],
+                                                       intrinsic_mat,
+                                                       distCoeffs=None,
+                                                       reprojectionError=4)
     rodrig = None
     cloud_points = None
     if res_code:
