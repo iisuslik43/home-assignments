@@ -1,0 +1,16 @@
+/.idea
+point_cloud.yml
+rgb.mov
+track.yml
+fox.mov
+__pycache__/
+.DS_Store
+*.png
+bike_translation_slow/
+fox_full/
+fox_short/
+fox-point_cloud.yml
+fox-track.yml
+house-point_cloud.yml
+house
+house-track.yml\
