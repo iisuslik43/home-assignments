@@ -24,13 +24,51 @@ from _camtrack import (
     to_opencv_camera_mat3x3,
     view_mat3x4_to_pose,
     build_correspondences, pose_to_view_mat3x4, triangulate_correspondences, TriangulationParameters,
-    rodrigues_and_translation_to_view_mat3x4)
+    rodrigues_and_translation_to_view_mat3x4, eye3x4)
 
 
 INLIERS_MIN_SIZE = 0
 TRIANG_PARAMS = TriangulationParameters(4, 1e-2, 1e-2)
 DELTA = 7
 MIN_SIZE = 20
+FIND_VIEWS_DELTA_FROM = 1
+FIND_VIEWS_DELTA_TO = 60
+MIN_INTERSECTION_LEN = 10
+
+
+def find_views(intrinsic_mat: np.ndarray,
+               corner_storage: CornerStorage) -> Tuple[Tuple[int, Pose], Tuple[int, Pose]]:
+    best_i, best_j = -1, -1
+    best_ids = []
+    best_matrix = None
+    desc_mask = "finding 2 best frames for init, max indexes = {}"
+    iterr = tqdm(range(len(corner_storage)), desc=desc_mask.format("?"))
+    first_matrix = eye3x4()
+    for i in iterr:
+        for j in range(i + FIND_VIEWS_DELTA_FROM, min(i + FIND_VIEWS_DELTA_TO, len(corner_storage))):
+            intersection, (indexes_i, indexes_j) = snp.intersect(corner_storage[i].ids.flatten(),
+                                                                           corner_storage[j].ids.flatten(),
+                                                                           indices=True)
+            if len(intersection) > MIN_INTERSECTION_LEN:
+                points3d_i = corner_storage[i].points[indexes_i]
+                points3d_j = corner_storage[j].points[indexes_j]
+                retval_ess, mask_ess = cv2.findEssentialMat(points3d_i, points3d_j, focal=intrinsic_mat[0][0])
+                retval, R, t, mask = cv2.recoverPose(retval_ess, points3d_i, points3d_j, focal=intrinsic_mat[0][0])
+                correspondences_i = build_correspondences(corner_storage[i], corner_storage[j])
+                res_matrix = np.concatenate((R, t), axis=1)
+                points3d, corr_ids, median_cos = triangulate_correspondences(correspondences_i,
+                                                                             first_matrix,
+                                                                             res_matrix,
+                                                                             intrinsic_mat,
+                                                                             TRIANG_PARAMS)
+                if len(corr_ids) >= len(best_ids):
+                    best_ids = corr_ids
+                    iterr.set_description(desc_mask.format(len(corr_ids)))
+                    best_i, best_j = i, j
+                    best_matrix = res_matrix
+
+    return (best_i, first_matrix), (best_j, best_matrix)
+
 
 def get_ransac(point_cloud_builder, corners_i, intrinsic_mat):
     intersection, (indexes_cloud, indexes_corners) = snp.intersect(point_cloud_builder.ids.flatten(),
@@ -89,19 +127,22 @@ def track_and_calc_colors(camera_parameters: CameraParameters,
                           known_view_1: Optional[Tuple[int, Pose]] = None,
                           known_view_2: Optional[Tuple[int, Pose]] = None) \
         -> Tuple[List[Pose], PointCloud]:
-    if known_view_1 is None or known_view_2 is None:
-        raise NotImplementedError()
     rgb_sequence = frameseq.read_rgb_f32(frame_sequence_path)
     intrinsic_mat = to_opencv_camera_mat3x3(
         camera_parameters,
         rgb_sequence[0].shape[0]
     )
+    if known_view_1 is None or known_view_2 is None:
+        known_view_1, known_view_2 = find_views(intrinsic_mat, corner_storage)
+        view_mat3x4_1 = known_view_1[1]
+        view_mat3x4_2 = known_view_2[1]
+    else:
+        view_mat3x4_1 = pose_to_view_mat3x4(known_view_1[1])
+        view_mat3x4_2 = pose_to_view_mat3x4(known_view_2[1])
     i_1 = known_view_1[0]
     i_2 = known_view_2[0]
     print('Known frames are', i_1, 'and', i_2)
     global INLIERS_MIN_SIZE, DELTA, MIN_SIZE, TRIANG_PARAMS
-    view_mat3x4_1 = pose_to_view_mat3x4(known_view_1[1])
-    view_mat3x4_2 = pose_to_view_mat3x4(known_view_2[1])
     correspondences = build_correspondences(corner_storage[i_1], corner_storage[i_2])
     print(len(correspondences.ids))
     points3d, corr_ids, median_cos = triangulate_correspondences(correspondences,
