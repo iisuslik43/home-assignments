@@ -31,9 +31,9 @@ INLIERS_MIN_SIZE = 0
 TRIANG_PARAMS = TriangulationParameters(4, 1e-2, 1e-2)
 DELTA = 7
 MIN_SIZE = 20
-FIND_VIEWS_DELTA_FROM = 25
+FIND_VIEWS_DELTA_FROM = 20
 FIND_VIEWS_DELTA_TO = 40
-FIND_VIEWS_MAX_FRAME = 80
+FIND_VIEWS_MAX_FRAME = 60
 MIN_INTERSECTION_LEN = 20
 
 
@@ -41,7 +41,6 @@ def find_views(intrinsic_mat: np.ndarray,
                corner_storage: CornerStorage):
     best_i, best_j = 0, 1
     best_ids = []
-    best_matrix = None
     desc_mask = "finding 2 best frames for init, max indexes = {}"
     max_len = min(len(corner_storage), FIND_VIEWS_MAX_FRAME)
     iterr = tqdm(range(max_len), desc=desc_mask.format("?"))
@@ -101,9 +100,12 @@ def get_ransac(point_cloud_builder, corners_i, intrinsic_mat):
 def update(i, corner_storage, view_mats, point_cloud_builder, intrinsic_mat, err_indexes, template, tqdm_iter):
     res_code, rodrig, inliers, cloud_points = get_ransac(point_cloud_builder, corner_storage[i], intrinsic_mat)
     if res_code:
+        if abs(view_mats[max(i - 1, 0)] - rodrig).sum() > 1000:
+            view_mats[i] = view_mats[i - 1] if i != 0 else eye3x4()
+        else:
+            view_mats[i] = rodrig
         inliers = np.array(inliers).astype(np.int64)
         point_cloud_builder.update_points(inliers, cloud_points)
-        view_mats[i] = rodrig
         err_indexes.remove(i)
         tqdm_iter.update()
 
@@ -139,7 +141,7 @@ def track_and_calc_colors(camera_parameters: CameraParameters,
     )
     global INLIERS_MIN_SIZE, DELTA, MIN_SIZE, TRIANG_PARAMS, FIND_VIEWS_DELTA_FROM, FIND_VIEWS_DELTA_TO
     if len(corner_storage) < FIND_VIEWS_DELTA_FROM:
-        FIND_VIEWS_DELTA_FROM = 10
+        FIND_VIEWS_DELTA_FROM = 5
         FIND_VIEWS_DELTA_TO = 30
     if known_view_1 is None or known_view_2 is None:
         known_view_1, known_view_2 = find_views(intrinsic_mat, corner_storage)
@@ -153,7 +155,6 @@ def track_and_calc_colors(camera_parameters: CameraParameters,
     print('Known frames are', i_1, 'and', i_2)
 
     correspondences = build_correspondences(corner_storage[i_1], corner_storage[i_2])
-    print(len(corner_storage[-1].ids))
     points3d, corr_ids, median_cos = triangulate_correspondences(correspondences,
                                                                  view_mat3x4_1,
                                                                  view_mat3x4_2,
