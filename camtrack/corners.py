@@ -72,7 +72,8 @@ def calc_lk(image_0, image_1, prev_corners, block_size):
 def _build_impl(frame_sequence: pims.FramesSequence,
                 builder: _CornerStorageBuilder) -> None:
     image_0 = (255 * frame_sequence[0]).astype(np.uint8)
-    block_size = 10
+    block_size = max(image_0.shape[0] * image_0.shape[1] // 207360, 10)
+    print('block_size =', block_size)
     corners = calc_frame_corners(image_0, block_size, q=0.001)
     last_id = len(corners.points)
     builder.set_corners_at_frame(0, corners)

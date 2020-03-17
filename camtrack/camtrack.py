@@ -31,21 +31,24 @@ INLIERS_MIN_SIZE = 0
 TRIANG_PARAMS = TriangulationParameters(4, 1e-2, 1e-2)
 DELTA = 7
 MIN_SIZE = 20
-FIND_VIEWS_DELTA_FROM = 1
-FIND_VIEWS_DELTA_TO = 60
-MIN_INTERSECTION_LEN = 10
+FIND_VIEWS_DELTA_FROM = 25
+FIND_VIEWS_DELTA_TO = 40
+FIND_VIEWS_MAX_FRAME = 80
+MIN_INTERSECTION_LEN = 20
 
 
 def find_views(intrinsic_mat: np.ndarray,
-               corner_storage: CornerStorage) -> Tuple[Tuple[int, Pose], Tuple[int, Pose]]:
-    best_i, best_j = -1, -1
+               corner_storage: CornerStorage):
+    best_i, best_j = 0, 1
     best_ids = []
     best_matrix = None
     desc_mask = "finding 2 best frames for init, max indexes = {}"
-    iterr = tqdm(range(len(corner_storage)), desc=desc_mask.format("?"))
+    max_len = min(len(corner_storage), FIND_VIEWS_MAX_FRAME)
+    iterr = tqdm(range(max_len), desc=desc_mask.format("?"))
     first_matrix = eye3x4()
+    best_matrix = eye3x4()
     for i in iterr:
-        for j in range(i + FIND_VIEWS_DELTA_FROM, min(i + FIND_VIEWS_DELTA_TO, len(corner_storage))):
+        for j in range(i + FIND_VIEWS_DELTA_FROM, min(i + FIND_VIEWS_DELTA_TO, max_len)):
             intersection, (indexes_i, indexes_j) = snp.intersect(corner_storage[i].ids.flatten(),
                                                                            corner_storage[j].ids.flatten(),
                                                                            indices=True)
@@ -53,14 +56,16 @@ def find_views(intrinsic_mat: np.ndarray,
                 points3d_i = corner_storage[i].points[indexes_i]
                 points3d_j = corner_storage[j].points[indexes_j]
                 retval_ess, mask_ess = cv2.findEssentialMat(points3d_i, points3d_j, focal=intrinsic_mat[0][0])
-                retval, R, t, mask = cv2.recoverPose(retval_ess, points3d_i, points3d_j, focal=intrinsic_mat[0][0])
+                retval_rec, R, t, mask_rec = cv2.recoverPose(retval_ess, points3d_i, points3d_j, focal=intrinsic_mat[0][0])
                 correspondences_i = build_correspondences(corner_storage[i], corner_storage[j])
                 res_matrix = np.concatenate((R, t), axis=1)
+
+                tr_params = TriangulationParameters(4, 1e-2, 1e-2)
                 points3d, corr_ids, median_cos = triangulate_correspondences(correspondences_i,
                                                                              first_matrix,
                                                                              res_matrix,
                                                                              intrinsic_mat,
-                                                                             TRIANG_PARAMS)
+                                                                             tr_params)
                 if len(corr_ids) >= len(best_ids):
                     best_ids = corr_ids
                     iterr.set_description(desc_mask.format(len(corr_ids)))
@@ -132,6 +137,10 @@ def track_and_calc_colors(camera_parameters: CameraParameters,
         camera_parameters,
         rgb_sequence[0].shape[0]
     )
+    global INLIERS_MIN_SIZE, DELTA, MIN_SIZE, TRIANG_PARAMS, FIND_VIEWS_DELTA_FROM, FIND_VIEWS_DELTA_TO
+    if len(corner_storage) < FIND_VIEWS_DELTA_FROM:
+        FIND_VIEWS_DELTA_FROM = 10
+        FIND_VIEWS_DELTA_TO = 30
     if known_view_1 is None or known_view_2 is None:
         known_view_1, known_view_2 = find_views(intrinsic_mat, corner_storage)
         view_mat3x4_1 = known_view_1[1]
@@ -142,9 +151,9 @@ def track_and_calc_colors(camera_parameters: CameraParameters,
     i_1 = known_view_1[0]
     i_2 = known_view_2[0]
     print('Known frames are', i_1, 'and', i_2)
-    global INLIERS_MIN_SIZE, DELTA, MIN_SIZE, TRIANG_PARAMS
+
     correspondences = build_correspondences(corner_storage[i_1], corner_storage[i_2])
-    print(len(correspondences.ids))
+    print(len(corner_storage[-1].ids))
     points3d, corr_ids, median_cos = triangulate_correspondences(correspondences,
                                                                  view_mat3x4_1,
                                                                  view_mat3x4_2,
