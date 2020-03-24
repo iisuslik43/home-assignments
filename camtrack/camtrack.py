@@ -100,7 +100,13 @@ def get_ransac(point_cloud_builder, corners_i, intrinsic_mat):
 def update(i, corner_storage, view_mats, point_cloud_builder, intrinsic_mat, err_indexes, template, tqdm_iter):
     res_code, rodrig, inliers, cloud_points = get_ransac(point_cloud_builder, corner_storage[i], intrinsic_mat)
     if res_code:
-        if abs(view_mats[max(i - 1, 0)] - rodrig).sum() > 1000:
+        v = np.array([1, 0, 0])
+        turn_i = rodrig[:,0:3].dot(v)
+        turn_prev = view_mats[max(i - 1, 0)][:,0:3].dot(v)
+        from numpy.linalg import norm
+        cos_sim = turn_i.dot(turn_prev) / (norm(turn_i) * norm(turn_prev))
+        if abs(view_mats[max(i - 1, 0)] - rodrig).sum() > 1000 or cos_sim < 0.5:
+            print('Bad matrix found', i, abs(view_mats[max(i - 1, 0)] - rodrig).sum(), cos_sim)
             view_mats[i] = view_mats[i - 1] if i != 0 else eye3x4()
         else:
             view_mats[i] = rodrig
